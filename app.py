@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 
 import pandas as pd
 import streamlit as st
+from gensim.models import Word2Vec
 
 
 st.set_page_config(
@@ -14,22 +15,22 @@ st.set_page_config(
 
 st.title("📚 マンガレコメンド")
 st.write(
-    "好きなマンガを選ぶと、同じ回答者が一緒に挙げたマンガをおすすめします。"
+    "アンケート結果を使い、共起ベースとitem2vecの"
+    "2種類の方法でおすすめマンガを表示します。"
 )
 
 
+# ==================================================
+# 作品名の表記統一
+# ==================================================
+
 def title_key(title):
-    """
-    同一作品か比較するための文字列を作る。
-    空白、記号、英字の大文字・小文字などを無視する。
-    """
     text = unicodedata.normalize("NFKC", str(title)).strip()
     text = text.replace("×", "x")
     text = re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
     return text.lower()
 
 
-# 明示的に統一したい作品名
 RAW_TITLE_ALIASES = {
     "ハイキュー": "ハイキュー!!",
     "ハイキュー!": "ハイキュー!!",
@@ -81,12 +82,11 @@ RAW_TITLE_ALIASES = {
     "転生したらスライムだった件": "転生したらスライムだった件",
     "転スラ": "転生したらスライムだった件",
 
-    "鬼滅の刃": "鬼滅の刃",
     "鬼滅": "鬼滅の刃",
+    "鬼滅の刃": "鬼滅の刃",
 }
 
 
-# 辞書のキーにも同じ正規化処理をかける
 TITLE_ALIASES = {
     title_key(original): canonical
     for original, canonical in RAW_TITLE_ALIASES.items()
@@ -110,9 +110,6 @@ INVALID_ANSWERS = {
 
 
 def prepare_title(value):
-    """
-    CSV内の値を整形し、比較用キーと表示用タイトルを返す。
-    """
     if pd.isna(value):
         return None
 
@@ -126,6 +123,10 @@ def prepare_title(value):
 
     return key, title
 
+
+# ==================================================
+# CSVの読み込み
+# ==================================================
 
 @st.cache_data
 def load_survey():
@@ -148,13 +149,10 @@ def load_survey():
 
     if not manga_columns:
         st.error(
-            "CSV内に「マンガ」を含む列が見つかりません。"
-            "列名を確認してください。"
+            "CSV内に「マンガ」を含む列がありません。"
         )
         st.stop()
 
-    # 明示的な別名辞書にない作品について、
-    # 同じ比較用キーを持つ表記を自動的にまとめる
     variant_counts = defaultdict(Counter)
 
     for column in manga_columns:
@@ -172,7 +170,6 @@ def load_survey():
     canonical_titles = dict(TITLE_ALIASES)
 
     for key, counts in variant_counts.items():
-        # 最も多く使われている表記を表示用タイトルにする
         canonical_titles[key] = counts.most_common(1)[0][0]
 
     responses = []
@@ -189,7 +186,6 @@ def load_survey():
             key, _ = prepared
             canonical_title = canonical_titles[key]
 
-            # 同じ回答者が同一作品を重複記入した場合は1件にする
             if canonical_title not in titles:
                 titles.append(canonical_title)
 
@@ -199,11 +195,41 @@ def load_survey():
     return responses
 
 
-def create_recommendations(responses, selected_title):
-    """
-    選択作品を挙げた人が、ほかに挙げていた作品を集計する。
-    おすすめ度にはJaccard係数を使用する。
-    """
+# ==================================================
+# item2vecモデルの学習
+# ==================================================
+
+@st.cache_resource
+def train_item2vec(sentences):
+    training_data = [
+        list(sentence)
+        for sentence in sentences
+    ]
+
+    model = Word2Vec(
+        sentences=training_data,
+        vector_size=32,
+        window=10,
+        min_count=1,
+        sg=1,
+        negative=10,
+        sample=0,
+        epochs=300,
+        seed=123,
+        workers=1,
+    )
+
+    return model
+
+
+# ==================================================
+# 共起ベースの推薦
+# ==================================================
+
+def create_cooccurrence_recommendations(
+    responses,
+    selected_title,
+):
     selected_responses = [
         titles
         for titles in responses
@@ -256,7 +282,67 @@ def create_recommendations(responses, selected_title):
     return pd.DataFrame(results)
 
 
+# ==================================================
+# item2vecによる推薦
+# ==================================================
+
+def create_item2vec_recommendations(
+    model,
+    responses,
+    selected_title,
+    result_count,
+):
+    if selected_title not in model.wv.key_to_index:
+        return pd.DataFrame()
+
+    vocabulary_size = len(model.wv.index_to_key)
+
+    if vocabulary_size <= 1:
+        return pd.DataFrame()
+
+    candidate_count = min(
+        max(result_count * 3, 20),
+        vocabulary_size - 1,
+    )
+
+    similar_titles = model.wv.most_similar(
+        positive=[selected_title],
+        topn=candidate_count,
+    )
+
+    results = []
+
+    for title, similarity in similar_titles:
+        together_count = sum(
+            selected_title in titles and title in titles
+            for titles in responses
+        )
+
+        results.append(
+            {
+                "マンガ": title,
+                "item2vec類似度": float(similarity),
+                "一緒に選んだ人数": together_count,
+            }
+        )
+
+    return pd.DataFrame(results).head(result_count)
+
+
+# ==================================================
+# データとモデルの準備
+# ==================================================
+
 responses = load_survey()
+
+item2vec_sentences = tuple(
+    tuple(titles)
+    for titles in responses
+)
+
+item2vec_model = train_item2vec(
+    item2vec_sentences
+)
 
 all_titles = sorted(
     {
@@ -272,6 +358,11 @@ st.info(
     f"登録マンガ数：{len(all_titles)}作品"
 )
 
+
+# ==================================================
+# 画面
+# ==================================================
+
 selected_title = st.selectbox(
     "好きなマンガを選んでください",
     all_titles,
@@ -284,61 +375,155 @@ result_count = st.slider(
     value=10,
 )
 
-recommendations = create_recommendations(
-    responses,
-    selected_title,
+selected_user_count = sum(
+    selected_title in titles
+    for titles in responses
 )
 
-st.subheader(
-    f"「{selected_title}」が好きな人へのおすすめ"
+st.caption(
+    f"「{selected_title}」を選んだ回答者："
+    f"{selected_user_count}人"
 )
 
-if recommendations.empty:
+if selected_user_count == 1:
     st.warning(
-        "このマンガと一緒に選ばれた作品がありません。"
+        "この作品を選んだ回答者が1人だけなので、"
+        "推薦結果は参考程度に確認してください。"
     )
 
-else:
-    display_df = recommendations.head(
-        result_count
-    ).copy()
 
-    display_df.insert(
-        0,
-        "順位",
-        range(1, len(display_df) + 1),
+tab1, tab2 = st.tabs(
+    [
+        "共起ベース",
+        "item2vec",
+    ]
+)
+
+
+# 共起ベース
+with tab1:
+    st.subheader(
+        f"「{selected_title}」を選んだ人のおすすめ"
     )
 
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "順位": st.column_config.NumberColumn(
-                "順位",
-                format="%d",
-            ),
-            "マンガ": "おすすめマンガ",
-            "一緒に選んだ人数": st.column_config.NumberColumn(
-                "一緒に選んだ人数",
-                format="%d人",
-            ),
-            "おすすめ度": st.column_config.ProgressColumn(
-                "おすすめ度",
-                help=(
-                    "選択した作品と、ほかの作品が"
-                    "同じ回答内に登場した割合です。"
+    st.write(
+        "同じ回答者が一緒に選んだ作品をもとに推薦します。"
+    )
+
+    cooccurrence_results = (
+        create_cooccurrence_recommendations(
+            responses,
+            selected_title,
+        )
+    )
+
+    if cooccurrence_results.empty:
+        st.warning(
+            "このマンガと一緒に選ばれた作品がありません。"
+        )
+
+    else:
+        display_df = cooccurrence_results.head(
+            result_count
+        ).copy()
+
+        display_df.insert(
+            0,
+            "順位",
+            range(1, len(display_df) + 1),
+        )
+
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "順位": st.column_config.NumberColumn(
+                    "順位",
+                    format="%d",
                 ),
-                min_value=0.0,
-                max_value=1.0,
-                format="%.2f",
-            ),
-        },
+                "マンガ": "おすすめマンガ",
+                "一緒に選んだ人数":
+                    st.column_config.NumberColumn(
+                        "一緒に選んだ人数",
+                        format="%d人",
+                    ),
+                "おすすめ度":
+                    st.column_config.ProgressColumn(
+                        "おすすめ度",
+                        min_value=0.0,
+                        max_value=1.0,
+                        format="%.2f",
+                    ),
+            },
+        )
+
+
+# item2vec
+with tab2:
+    st.subheader(
+        f"item2vecによる「{selected_title}」のおすすめ"
     )
 
+    st.write(
+        "5作品の組み合わせを学習し、"
+        "ベクトルが近い作品を推薦します。"
+    )
+
+    item2vec_results = (
+        create_item2vec_recommendations(
+            item2vec_model,
+            responses,
+            selected_title,
+            result_count,
+        )
+    )
+
+    if item2vec_results.empty:
+        st.warning(
+            "item2vecの推薦結果を作成できませんでした。"
+        )
+
+    else:
+        item2vec_results.insert(
+            0,
+            "順位",
+            range(1, len(item2vec_results) + 1),
+        )
+
+        st.dataframe(
+            item2vec_results,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "順位": st.column_config.NumberColumn(
+                    "順位",
+                    format="%d",
+                ),
+                "マンガ": "おすすめマンガ",
+                "item2vec類似度":
+                    st.column_config.NumberColumn(
+                        "item2vec類似度",
+                        format="%.3f",
+                        help=(
+                            "1に近いほど、item2vec上で"
+                            "似た作品として学習されています。"
+                        ),
+                    ),
+                "一緒に選んだ人数":
+                    st.column_config.NumberColumn(
+                        "実際に一緒に選んだ人数",
+                        format="%d人",
+                    ),
+            },
+        )
+
+
+# ==================================================
+# 人気作品
+# ==================================================
 
 st.divider()
-
 st.subheader("アンケート内で人気のマンガ")
 
 popularity = Counter(
