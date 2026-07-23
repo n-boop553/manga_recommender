@@ -1,8 +1,8 @@
-import math
 import re
 import unicodedata
 from collections import Counter, defaultdict
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 from gensim.models import Word2Vec
@@ -373,69 +373,195 @@ def create_preference_recommendations(
 # 異端度の計算
 # ==================================================
 
+DIRECT_MATCH_WEIGHT = 0.60
+ITEM2VEC_WEIGHT = 0.40
+
+REFERENCE_NEIGHBORS = 3
+CLOSE_SIMILARITY_THRESHOLD = 0.70
+
+
+def create_average_vector(
+    model,
+    titles,
+):
+    valid_titles = [
+        title
+        for title in titles
+        if title in model.wv.key_to_index
+    ]
+
+    if not valid_titles:
+        return None
+
+    vectors = [
+        model.wv.get_vector(title)
+        for title in valid_titles
+    ]
+
+    return np.mean(
+        vectors,
+        axis=0,
+    )
+
+
+def cosine_similarity(
+    first_vector,
+    second_vector,
+):
+    if first_vector is None or second_vector is None:
+        return 0.0
+
+    first_norm = np.linalg.norm(
+        first_vector
+    )
+
+    second_norm = np.linalg.norm(
+        second_vector
+    )
+
+    if first_norm == 0 or second_norm == 0:
+        return 0.0
+
+    similarity = float(
+        np.dot(
+            first_vector,
+            second_vector,
+        )
+        / (
+            first_norm
+            * second_norm
+        )
+    )
+
+    # 負の値は「近くない」とみなし、0にする
+    return max(
+        0.0,
+        min(1.0, similarity),
+    )
+
+
 def analyze_rarity(
     responses,
     selected_titles,
+    model,
 ):
-    selected_set = set(selected_titles)
-    selected_count = len(selected_set)
+    selected_set = set(
+        selected_titles
+    )
+
+    selected_count = len(
+        selected_set
+    )
 
     if selected_count < 2:
         return None
 
+    selected_vector = create_average_vector(
+        model,
+        selected_titles,
+    )
+
     comparison_results = []
 
-    for index, titles in enumerate(responses):
-        response_set = set(titles)
-        matched_titles = selected_set & response_set
-        match_count = len(matched_titles)
+    for index, response_titles in enumerate(
+        responses
+    ):
+        response_set = set(
+            response_titles
+        )
+
+        matched_titles = (
+            selected_set
+            & response_set
+        )
+
+        exact_match_count = len(
+            matched_titles
+        )
+
+        # ユーザーが選んだ作品のうち、
+        # 何作品が回答者と直接一致したか
+        direct_match_ratio = (
+            exact_match_count
+            / selected_count
+        )
+
+        response_vector = create_average_vector(
+            model,
+            response_titles,
+        )
+
+        # 一致しない作品も含めた、
+        # 回答全体のitem2vec上の近さ
+        item2vec_similarity = cosine_similarity(
+            selected_vector,
+            response_vector,
+        )
+
+        combined_similarity = (
+            DIRECT_MATCH_WEIGHT
+            * direct_match_ratio
+            + ITEM2VEC_WEIGHT
+            * item2vec_similarity
+        )
 
         comparison_results.append(
             {
                 "回答番号": index + 1,
-                "一致数": match_count,
-                "一致率": match_count / selected_count,
+                "一致数": exact_match_count,
+                "直接一致率": direct_match_ratio,
+                "作品構成の近さ":
+                    item2vec_similarity,
+                "総合的な近さ":
+                    combined_similarity,
                 "一致した作品": " / ".join(
                     sorted(matched_titles)
                 ),
-                "回答作品": " / ".join(titles),
-                "選んだ作品がすべて一致":
-                    selected_set.issubset(response_set),
+                "回答作品": " / ".join(
+                    response_titles
+                ),
+                "選んだ作品をすべて含む":
+                    selected_set.issubset(
+                        response_set
+                    ),
             }
         )
 
     if not comparison_results:
         return None
 
-    maximum_match = max(
-        result["一致数"]
-        for result in comparison_results
+    comparison_results.sort(
+        key=lambda result: result[
+            "総合的な近さ"
+        ],
+        reverse=True,
     )
 
-    complete_match_count = sum(
-        result["選んだ作品がすべて一致"]
-        for result in comparison_results
+    neighbor_count = min(
+        REFERENCE_NEIGHBORS,
+        len(comparison_results),
     )
 
-    # 「好みが近い」と判断する一致数
-    # 2作品選択：2作品一致
-    # 3作品選択：2作品以上一致
-    # 4作品選択：3作品以上一致
-    # 5作品選択：3作品以上一致
-    close_match_threshold = max(
-        2,
-        math.ceil(selected_count * 0.6),
+    closest_results = (
+        comparison_results[
+            :neighbor_count
+        ]
     )
 
-    close_match_count = sum(
-        result["一致数"] >= close_match_threshold
-        for result in comparison_results
+    # 最も近い上位3人との平均的な近さ
+    neighborhood_similarity = (
+        sum(
+            result["総合的な近さ"]
+            for result in closest_results
+        )
+        / neighbor_count
     )
 
-    # 最も近い回答者との一致率を0～100の異端度に変換
     rarity_score = round(
-        100 * (
-            1 - maximum_match / selected_count
+        100
+        * (
+            1
+            - neighborhood_similarity
         )
     )
 
@@ -444,53 +570,66 @@ def analyze_rarity(
         min(100, rarity_score),
     )
 
-    closest_results = [
-        result
+    complete_match_count = sum(
+        result[
+            "選んだ作品をすべて含む"
+        ]
         for result in comparison_results
-        if result["一致数"] == maximum_match
-    ][:3]
+    )
+
+    close_match_count = sum(
+        result["総合的な近さ"]
+        >= CLOSE_SIMILARITY_THRESHOLD
+        for result in comparison_results
+    )
 
     return {
-        "selected_count": selected_count,
-        "maximum_match": maximum_match,
-        "complete_match_count": complete_match_count,
-        "close_match_count": close_match_count,
-        "close_match_threshold": close_match_threshold,
-        "rarity_score": rarity_score,
-        "closest_results": closest_results,
+        "selected_count":
+            selected_count,
+        "rarity_score":
+            rarity_score,
+        "best_similarity":
+            comparison_results[0][
+                "総合的な近さ"
+            ],
+        "neighborhood_similarity":
+            neighborhood_similarity,
+        "close_match_count":
+            close_match_count,
+        "complete_match_count":
+            complete_match_count,
+        "closest_results":
+            closest_results,
     }
 
 
 def rarity_message(score):
-    if score == 0:
+    if score <= 15:
         return (
-            "選んだ作品をすべて挙げている"
-            "回答者がいます。"
+            "アンケート内に、かなり近い"
+            "マンガ嗜好の人がいます。"
         )
 
-    if score <= 20:
+    if score <= 30:
         return (
-            "かなり近い好みの回答者がいます。"
+            "比較的近いマンガ嗜好の人がいます。"
         )
 
-    if score <= 40:
+    if score <= 50:
         return (
-            "一部に近い好みの回答者がいます。"
+            "共通点はありますが、"
+            "少し独自性のある組み合わせです。"
         )
 
-    if score <= 60:
+    if score <= 70:
         return (
-            "やや珍しい組み合わせです。"
-        )
-
-    if score <= 80:
-        return (
+            "アンケート内では、"
             "かなり珍しい組み合わせです。"
         )
 
     return (
         "アンケート内では非常に珍しい"
-        "組み合わせです。"
+        "マンガ嗜好です。"
     )
 
 
@@ -549,7 +688,9 @@ with st.expander(
 # 通常のレコメンド
 # ==================================================
 
-st.subheader("おすすめマンガを探す")
+st.subheader(
+    "おすすめマンガを探す"
+)
 
 selected_title = st.selectbox(
     "好きなマンガを選んでください",
@@ -564,7 +705,9 @@ result_count = st.number_input(
     step=1,
 )
 
-result_count = int(result_count)
+result_count = int(
+    result_count
+)
 
 selected_user_count = sum(
     selected_title in titles
@@ -622,7 +765,10 @@ with tab1:
         display_df.insert(
             0,
             "順位",
-            range(1, len(display_df) + 1),
+            range(
+                1,
+                len(display_df) + 1,
+            ),
         )
 
         st.dataframe(
@@ -737,8 +883,9 @@ st.subheader(
 
 st.write(
     "好きなマンガを2〜5作品選ぶと、"
-    "このアンケート内で似た選び方をした人が"
-    "どのくらいいるかを確認できます。"
+    "作品名の一致だけでなく、"
+    "選ばれた作品全体の系統も考慮して"
+    "異端度を判定します。"
 )
 
 selected_favorites = st.multiselect(
@@ -762,6 +909,7 @@ else:
     rarity_result = analyze_rarity(
         responses,
         selected_favorites,
+        preference_model,
     )
 
     if rarity_result is not None:
@@ -777,25 +925,25 @@ else:
 
         with metric2:
             st.metric(
-                "最も近い人との一致",
+                "最も近い人との近さ",
                 (
-                    f"{rarity_result['maximum_match']} / "
-                    f"{rarity_result['selected_count']}作品"
+                    f"{rarity_result['best_similarity'] * 100:.0f}%"
                 ),
             )
 
         with metric3:
             st.metric(
-                (
-                    f"{rarity_result['close_match_threshold']}"
-                    "作品以上一致した人"
-                ),
+                "好みが近い人",
                 f"{rarity_result['close_match_count']}人",
+                help=(
+                    "作品名の一致と作品構成の近さを"
+                    "合わせた値が70％以上の回答者です。"
+                ),
             )
 
         with metric4:
             st.metric(
-                "選んだ作品がすべて一致した人",
+                "選んだ作品をすべて含む人",
                 f"{rarity_result['complete_match_count']}人",
             )
 
@@ -810,24 +958,29 @@ else:
         )
 
         st.caption(
-            "異端度は、選んだ作品数に対する"
-            "最も近い回答者との一致率から算出した、"
-            f"この{len(responses)}人のアンケート内だけの"
-            "参考値です。"
+            "異端度は、作品名の直接一致を60％、"
+            "item2vecによる作品構成の近さを40％として"
+            "回答者ごとの近さを計算し、"
+            "最も近い上位3人の平均から算出しています。"
+            f"対象は{len(responses)}人のアンケート回答です。"
         )
 
         with st.expander(
             "あなたに最も近い回答例を見る"
         ):
             closest_df = pd.DataFrame(
-                rarity_result["closest_results"]
+                rarity_result[
+                    "closest_results"
+                ]
             )
 
             st.dataframe(
                 closest_df[
                     [
                         "一致数",
-                        "一致率",
+                        "直接一致率",
+                        "作品構成の近さ",
+                        "総合的な近さ",
                         "一致した作品",
                         "回答作品",
                     ]
@@ -840,9 +993,23 @@ else:
                             "一致数",
                             format="%d作品",
                         ),
-                    "一致率":
+                    "直接一致率":
                         st.column_config.ProgressColumn(
-                            "一致率",
+                            "直接一致率",
+                            min_value=0.0,
+                            max_value=1.0,
+                            format="%.2f",
+                        ),
+                    "作品構成の近さ":
+                        st.column_config.ProgressColumn(
+                            "作品構成の近さ",
+                            min_value=0.0,
+                            max_value=1.0,
+                            format="%.2f",
+                        ),
+                    "総合的な近さ":
+                        st.column_config.ProgressColumn(
+                            "総合的な近さ",
                             min_value=0.0,
                             max_value=1.0,
                             format="%.2f",
@@ -878,7 +1045,10 @@ popular_df = pd.DataFrame(
 popular_df.insert(
     0,
     "順位",
-    range(1, len(popular_df) + 1),
+    range(
+        1,
+        len(popular_df) + 1,
+    ),
 )
 
 st.dataframe(
