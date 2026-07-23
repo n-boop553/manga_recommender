@@ -712,7 +712,7 @@ with tab2:
 st.divider()
 
 st.subheader(
-    "🪐 あなたのマンガ好みはどのくらい珍しい？"
+    "🪐 マンガ嗜好異端度調査"
 )
 
 st.write(
