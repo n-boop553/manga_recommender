@@ -15,7 +15,236 @@ st.set_page_config(
     page_title="マンガレコメンド",
     page_icon="📚",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+
+# ==================================================
+# 画面デザイン
+# ==================================================
+
+st.markdown(
+    """
+    <style>
+    :root {
+        --primary: #6554c0;
+        --primary-dark: #4f3faa;
+        --primary-soft: #eeeafd;
+        --accent: #ef7b8d;
+        --text: #28253a;
+        --muted: #6f6b7d;
+        --line: #e7e3ef;
+        --surface: #ffffff;
+        --background: #f7f6fb;
+    }
+
+    html, body, [class*="css"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
+        color: var(--text);
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at top right, #eeeafd 0, transparent 28rem),
+            var(--background);
+    }
+
+    .block-container {
+        max-width: 1180px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+    }
+
+    .hero-card {
+        padding: 1.55rem 1.75rem;
+        margin-bottom: 1.4rem;
+        border: 1px solid rgba(101, 84, 192, 0.15);
+        border-radius: 22px;
+        background: linear-gradient(135deg, #ffffff 0%, #f0edff 100%);
+        box-shadow: 0 12px 32px rgba(74, 61, 129, 0.08);
+    }
+
+    .hero-title {
+        margin: 0;
+        color: var(--text);
+        font-size: clamp(1.75rem, 3vw, 2.55rem);
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+    }
+
+    .hero-description {
+        margin: 0.7rem 0 0;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.75;
+    }
+
+    .section-label {
+        margin: 1.7rem 0 0.75rem;
+        color: var(--text);
+        font-size: 1.25rem;
+        font-weight: 750;
+        letter-spacing: -0.01em;
+    }
+
+    div[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #f5f2ff 0%, #ffffff 100%);
+        border-right: 1px solid var(--line);
+    }
+
+    div[data-testid="stSidebar"] > div:first-child {
+        padding-top: 1.2rem;
+    }
+
+    .sidebar-brand {
+        padding: 1rem 1.05rem;
+        margin-bottom: 0.8rem;
+        border-radius: 16px;
+        background: #ffffff;
+        border: 1px solid var(--line);
+        box-shadow: 0 8px 22px rgba(74, 61, 129, 0.07);
+    }
+
+    .sidebar-brand-title {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--primary-dark);
+    }
+
+    .sidebar-brand-text {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.55;
+    }
+
+    div[data-testid="stMetric"] {
+        min-height: 118px;
+        padding: 1rem 1.1rem;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 8px 24px rgba(74, 61, 129, 0.06);
+    }
+
+    div[data-testid="stMetricLabel"] {
+        color: var(--muted);
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: var(--primary-dark);
+    }
+
+    .stButton > button {
+        min-height: 2.75rem;
+        border: 1px solid #d9d3f1;
+        border-radius: 12px;
+        background: #ffffff;
+        color: var(--primary-dark);
+        font-weight: 700;
+        transition: all 0.18s ease;
+    }
+
+    .stButton > button:hover {
+        border-color: var(--primary);
+        background: var(--primary-soft);
+        color: var(--primary-dark);
+        transform: translateY(-1px);
+    }
+
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"] > div,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stTextInput"] input {
+        border-radius: 12px !important;
+    }
+
+    div[data-baseweb="tab-list"] {
+        gap: 0.45rem;
+        padding: 0.3rem;
+        border-radius: 14px;
+        background: #eeebf6;
+    }
+
+    button[data-baseweb="tab"] {
+        min-height: 2.75rem;
+        padding: 0 1rem;
+        border-radius: 10px;
+        font-weight: 700;
+    }
+
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: #ffffff;
+        color: var(--primary-dark);
+        box-shadow: 0 3px 10px rgba(74, 61, 129, 0.10);
+    }
+
+    div[data-testid="stDataFrame"] {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #ffffff;
+    }
+
+    div[data-testid="stExpander"] {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.82);
+    }
+
+    div[data-testid="stAlert"] {
+        border-radius: 14px;
+    }
+
+    hr {
+        margin: 2rem 0;
+        border-color: var(--line);
+    }
+
+    #MainMenu, footer {
+        visibility: hidden;
+    }
+
+    @media (max-width: 700px) {
+        .block-container {
+            padding-top: 1rem;
+        }
+
+        .hero-card {
+            padding: 1.2rem;
+            border-radius: 17px;
+        }
+
+        div[data-testid="stMetric"] {
+            min-height: 100px;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def render_page_header(title, description):
+    st.markdown(
+        f"""
+        <div class="hero-card">
+            <h1 class="hero-title">{title}</h1>
+            <p class="hero-description">{description}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_section_title(title):
+    st.markdown(
+        f'<div class="section-label">{title}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ==================================================
@@ -821,7 +1050,17 @@ excluded_titles = set(st.session_state.not_interested)
 # ==================================================
 
 
-st.sidebar.title("📚 メニュー")
+st.sidebar.markdown(
+    """
+    <div class="sidebar-brand">
+        <p class="sidebar-brand-title">📚 マンガレコメンド</p>
+        <p class="sidebar-brand-text">
+            アンケートの選ばれ方から、次に読みたい作品を探します。
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 page = st.sidebar.radio(
     "ページを選択",
@@ -865,10 +1104,9 @@ if st.session_state.not_interested:
 
 
 if page == "🏠 ホーム":
-    st.title("📚 マンガレコメンド")
-    st.write(
-        "アンケート回答とitem2vecを使って、"
-        "作品の推薦、嗜好診断、作品比較などを行います。"
+    render_page_header(
+        "📚 マンガレコメンド",
+        "アンケート回答の組み合わせをもとに、作品の推薦、嗜好診断、作品比較を行います。",
     )
 
     today_seed = int(
@@ -890,7 +1128,7 @@ if page == "🏠 ホーム":
     with col3:
         st.metric("今日の1冊", today_title)
 
-    st.subheader("今日の1冊")
+    render_section_title("今日の1冊")
     st.info(
         f"📖 **{today_title}**\n\n"
         f"アンケートでは{popularity[today_title]}人が選び、"
@@ -898,7 +1136,7 @@ if page == "🏠 ホーム":
     )
     render_title_actions(today_title, "home_today")
 
-    st.subheader("このサイトでできること")
+    render_section_title("このサイトでできること")
     st.markdown(
         """
 - 1作品または複数作品からおすすめを探す
@@ -922,7 +1160,10 @@ if page == "🏠 ホーム":
 
 
 elif page == "📖 1作品からおすすめ":
-    st.title("📖 1作品からおすすめ")
+    render_page_header(
+        "📖 1作品からおすすめ",
+        "好きな作品を1つ選び、同じ作品を選んだ人の回答と作品の選ばれ方からおすすめを探します。",
+    )
 
     selected_title = st.selectbox(
         "好きなマンガを選んでください",
@@ -1042,10 +1283,9 @@ elif page == "📖 1作品からおすすめ":
 
 
 elif page == "📚 複数作品からおすすめ":
-    st.title("📚 複数作品からおすすめ")
-    st.write(
-        "好きなマンガを2〜5作品選ぶと、"
-        "その組み合わせ全体に近い作品を探します。"
+    render_page_header(
+        "📚 複数作品からおすすめ",
+        "好きなマンガを2〜5作品選び、その組み合わせ全体に近い作品を探します。",
     )
 
     selected_titles = st.multiselect(
@@ -1127,7 +1367,10 @@ elif page == "📚 複数作品からおすすめ":
 
 
 elif page == "🔎 作品検索・詳細":
-    st.title("🔎 作品検索・詳細")
+    render_page_header(
+        "🔎 作品検索・詳細",
+        "作品名から検索し、アンケート内の人気度や選ばれ方が近い作品を確認できます。",
+    )
 
     search_text = st.text_input(
         "作品名で検索",
@@ -1182,7 +1425,7 @@ elif page == "🔎 作品検索・詳細":
             excluded_titles={detail_title},
         )
 
-        st.subheader("この作品と選ばれ方が近い作品")
+        render_section_title("この作品と選ばれ方が近い作品")
 
         if related.empty:
             st.info("関連作品を表示できませんでした。")
@@ -1215,7 +1458,10 @@ elif page == "🔎 作品検索・詳細":
 
 
 elif page == "⚖️ 作品を比較":
-    st.title("⚖️ 2作品の近さを比較")
+    render_page_header(
+        "⚖️ 2作品の近さを比較",
+        "2作品がアンケート内でどの程度似た選ばれ方をしているか比較します。",
+    )
 
     col1, col2 = st.columns(2)
 
@@ -1285,7 +1531,10 @@ elif page == "⚖️ 作品を比較":
 
 
 elif page == "🪐 嗜好診断・異端度":
-    st.title("🪐 マンガ嗜好診断・異端度調査")
+    render_page_header(
+        "🪐 マンガ嗜好診断・異端度調査",
+        "好きな作品の人気度、まとまり、回答者との近さから、あなたのマンガ嗜好を分析します。",
+    )
 
     selected_favorites = st.multiselect(
         "好きなマンガを2〜5作品選んでください",
@@ -1312,7 +1561,7 @@ elif page == "🪐 嗜好診断・異端度":
             preference_model,
         )
 
-        st.subheader("嗜好タイプ")
+        render_section_title("嗜好タイプ")
         st.success(
             f"### {diagnosis['label']}\n\n"
             f"{diagnosis['message']}"
@@ -1332,7 +1581,7 @@ elif page == "🪐 嗜好診断・異端度":
                 f"{diagnosis['cohesion'] * 100:.0f}%",
             )
 
-        st.subheader("異端度")
+        render_section_title("異端度")
 
         metric1, metric2, metric3, metric4 = st.columns(4)
 
@@ -1423,7 +1672,10 @@ elif page == "🪐 嗜好診断・異端度":
 
 
 elif page == "🤝 友達と比較":
-    st.title("🤝 友達とのマンガ嗜好比較")
+    render_page_header(
+        "🤝 友達とのマンガ嗜好比較",
+        "2人が選んだ作品名の一致と、作品構成全体の近さを比較します。",
+    )
 
     col1, col2 = st.columns(2)
 
@@ -1511,7 +1763,10 @@ elif page == "🤝 友達と比較":
 
 
 elif page == "🎲 ガチャ・発掘":
-    st.title("🎲 マンガガチャ・作品発掘")
+    render_page_header(
+        "🎲 マンガガチャ・作品発掘",
+        "偶然の出会いを楽しむガチャと、回答人数の少ない作品を探す発掘ページです。",
+    )
 
     available_titles = [
         title
@@ -1581,7 +1836,7 @@ elif page == "🎲 ガチャ・発掘":
 
         render_title_actions(gacha_title, "gacha")
 
-    st.subheader("マイナー作品発掘")
+    render_section_title("マイナー作品発掘")
 
     minor_df = pd.DataFrame(
         sorted(
@@ -1616,7 +1871,10 @@ elif page == "🎲 ガチャ・発掘":
 
 
 elif page == "🏆 ランキング":
-    st.title("🏆 アンケート内ランキング")
+    render_page_header(
+        "🏆 アンケート内ランキング",
+        "アンケートで多く選ばれた作品と、まだ選んだ人が少ない作品を一覧で確認できます。",
+    )
 
     ranking_size = int(
         st.number_input(
@@ -1638,14 +1896,14 @@ elif page == "🏆 ランキング":
         range(1, len(popular_df) + 1),
     )
 
-    st.subheader("人気ランキング")
+    render_section_title("人気ランキング")
     st.dataframe(
         popular_df,
         use_container_width=True,
         hide_index=True,
     )
 
-    st.subheader("発掘ランキング")
+    render_section_title("発掘ランキング")
     st.write(
         "回答人数が少ない作品を、"
         "アンケート内で見つけにくい順に表示します。"
@@ -1681,7 +1939,10 @@ elif page == "🏆 ランキング":
 
 
 elif page == "🔖 あとで読むリスト":
-    st.title("🔖 あとで読むリスト")
+    render_page_header(
+        "🔖 あとで読むリスト",
+        "気になった作品と、今後おすすめから外した作品を整理します。",
+    )
     st.caption(
         "このリストは現在のブラウザセッション内だけで保存されます。"
     )
@@ -1715,7 +1976,7 @@ elif page == "🔖 あとで読むリスト":
             remove_from_state("read_later", remove_title)
             st.rerun()
 
-    st.subheader("興味なしリスト")
+    render_section_title("興味なしリスト")
 
     if not st.session_state.not_interested:
         st.info("興味なしに登録された作品はありません。")
