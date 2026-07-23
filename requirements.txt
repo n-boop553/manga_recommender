@@ -1,3 +1,4 @@
 streamlit
 pandas
+numpy
 gensim==4.4.0
