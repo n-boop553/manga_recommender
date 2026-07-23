@@ -577,7 +577,7 @@ with tab1:
     )
 
     st.write(
-        "同じ回答者が一緒に選んだ作品を"
+        "同じ漫画を好きな人が一緒に選んだ作品を"
         "おすすめします。"
     )
 
@@ -636,7 +636,7 @@ with tab1:
 with tab2:
     st.subheader(
         f"「{selected_title}」と"
-        "好みが近いおすすめ"
+        "系統が近い作品をおすすめします。"
     )
 
     st.write(
