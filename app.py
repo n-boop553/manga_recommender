@@ -15,8 +15,7 @@ st.set_page_config(
 
 st.title("📚 マンガレコメンド")
 st.write(
-    "アンケート結果を使い、共起ベースとitem2vecの"
-    "2種類の方法でおすすめマンガを表示します。"
+    "アンケート結果を使い、2つの方法でおすすめマンガを表示します。"
 )
 
 
@@ -25,9 +24,19 @@ st.write(
 # ==================================================
 
 def title_key(title):
-    text = unicodedata.normalize("NFKC", str(title)).strip()
+    text = unicodedata.normalize(
+        "NFKC",
+        str(title),
+    ).strip()
+
     text = text.replace("×", "x")
-    text = re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+    text = re.sub(
+        r"[\W_]+",
+        "",
+        text,
+        flags=re.UNICODE,
+    )
+
     return text.lower()
 
 
@@ -72,24 +81,34 @@ RAW_TITLE_ALIASES = {
     "WITCH WATCH": "ウィッチウォッチ",
     "ウィッチウォッチ": "ウィッチウォッチ",
 
-    "魔入りました入間くん": "魔入りました！入間くん",
-    "魔入りました!入間くん": "魔入りました！入間くん",
-    "魔入りました！入間くん": "魔入りました！入間くん",
+    "魔入りました入間くん":
+        "魔入りました！入間くん",
+    "魔入りました!入間くん":
+        "魔入りました！入間くん",
+    "魔入りました！入間くん":
+        "魔入りました！入間くん",
 
-    "僕のヒーローアカデミア": "僕のヒーローアカデミア",
-    "ヒロアカ": "僕のヒーローアカデミア",
+    "僕のヒーローアカデミア":
+        "僕のヒーローアカデミア",
+    "ヒロアカ":
+        "僕のヒーローアカデミア",
 
-    "転生したらスライムだった件": "転生したらスライムだった件",
-    "転スラ": "転生したらスライムだった件",
+    "転生したらスライムだった件":
+        "転生したらスライムだった件",
+    "転スラ":
+        "転生したらスライムだった件",
 
-    "鬼滅": "鬼滅の刃",
-    "鬼滅の刃": "鬼滅の刃",
+    "鬼滅":
+        "鬼滅の刃",
+    "鬼滅の刃":
+        "鬼滅の刃",
 }
 
 
 TITLE_ALIASES = {
     title_key(original): canonical
-    for original, canonical in RAW_TITLE_ALIASES.items()
+    for original, canonical
+    in RAW_TITLE_ALIASES.items()
 }
 
 
@@ -113,8 +132,16 @@ def prepare_title(value):
     if pd.isna(value):
         return None
 
-    title = unicodedata.normalize("NFKC", str(value)).strip()
-    title = re.sub(r"\s+", " ", title)
+    title = unicodedata.normalize(
+        "NFKC",
+        str(value),
+    ).strip()
+
+    title = re.sub(
+        r"\s+",
+        " ",
+        title,
+    )
 
     key = title_key(title)
 
@@ -125,7 +152,7 @@ def prepare_title(value):
 
 
 # ==================================================
-# CSVの読み込み
+# アンケートデータの読み込み
 # ==================================================
 
 @st.cache_data
@@ -135,6 +162,7 @@ def load_survey():
             "data/manga_survey.csv",
             encoding="utf-8-sig",
         )
+
     except UnicodeDecodeError:
         df = pd.read_csv(
             "data/manga_survey.csv",
@@ -170,7 +198,9 @@ def load_survey():
     canonical_titles = dict(TITLE_ALIASES)
 
     for key, counts in variant_counts.items():
-        canonical_titles[key] = counts.most_common(1)[0][0]
+        canonical_titles[key] = (
+            counts.most_common(1)[0][0]
+        )
 
     responses = []
 
@@ -196,11 +226,12 @@ def load_survey():
 
 
 # ==================================================
-# item2vecモデルの学習
+# 好みの近さを学習するモデル
+# 技術的にはitem2vec
 # ==================================================
 
 @st.cache_resource
-def train_item2vec(sentences):
+def train_preference_model(sentences):
     training_data = [
         list(sentence)
         for sentence in sentences
@@ -223,10 +254,11 @@ def train_item2vec(sentences):
 
 
 # ==================================================
-# 共起ベースの推薦
+# 同じ回答者が選んだ作品から推薦
+# 技術的には共起ベース
 # ==================================================
 
-def create_cooccurrence_recommendations(
+def create_group_recommendations(
     responses,
     selected_title,
 ):
@@ -236,16 +268,16 @@ def create_cooccurrence_recommendations(
         if selected_title in titles
     ]
 
-    cooccurrence_counts = Counter()
+    together_counts = Counter()
 
     for titles in selected_responses:
         for title in titles:
             if title != selected_title:
-                cooccurrence_counts[title] += 1
+                together_counts[title] += 1
 
     results = []
 
-    for title, together_count in cooccurrence_counts.items():
+    for title, together_count in together_counts.items():
         title_user_count = sum(
             title in titles
             for titles in responses
@@ -283,10 +315,11 @@ def create_cooccurrence_recommendations(
 
 
 # ==================================================
-# item2vecによる推薦
+# 学習した好みの近さから推薦
+# 技術的にはitem2vec
 # ==================================================
 
-def create_item2vec_recommendations(
+def create_preference_recommendations(
     model,
     responses,
     selected_title,
@@ -295,7 +328,9 @@ def create_item2vec_recommendations(
     if selected_title not in model.wv.key_to_index:
         return pd.DataFrame()
 
-    vocabulary_size = len(model.wv.index_to_key)
+    vocabulary_size = len(
+        model.wv.index_to_key
+    )
 
     if vocabulary_size <= 1:
         return pd.DataFrame()
@@ -314,19 +349,129 @@ def create_item2vec_recommendations(
 
     for title, similarity in similar_titles:
         together_count = sum(
-            selected_title in titles and title in titles
+            selected_title in titles
+            and title in titles
             for titles in responses
         )
 
         results.append(
             {
                 "マンガ": title,
-                "item2vec類似度": float(similarity),
-                "一緒に選んだ人数": together_count,
+                "好みの近さ": float(similarity),
+                "実際に一緒に選んだ人数":
+                    together_count,
             }
         )
 
-    return pd.DataFrame(results).head(result_count)
+    return pd.DataFrame(results).head(
+        result_count
+    )
+
+
+# ==================================================
+# 異端度の計算
+# ==================================================
+
+def analyze_rarity(
+    responses,
+    selected_titles,
+):
+    selected_set = set(selected_titles)
+
+    comparison_results = []
+
+    for index, titles in enumerate(responses):
+        response_set = set(titles)
+
+        matched_titles = (
+            selected_set & response_set
+        )
+
+        comparison_results.append(
+            {
+                "回答番号": index + 1,
+                "一致数": len(matched_titles),
+                "一致した作品": " / ".join(
+                    sorted(matched_titles)
+                ),
+                "回答作品": " / ".join(titles),
+                "完全一致": response_set == selected_set,
+            }
+        )
+
+    if not comparison_results:
+        return None
+
+    maximum_match = max(
+        result["一致数"]
+        for result in comparison_results
+    )
+
+    exact_match_count = sum(
+        result["完全一致"]
+        for result in comparison_results
+    )
+
+    close_match_count = sum(
+        result["一致数"] >= 3
+        for result in comparison_results
+    )
+
+    rarity_score = int(
+        100 - maximum_match * 20
+    )
+
+    rarity_score = max(
+        0,
+        min(100, rarity_score),
+    )
+
+    closest_results = [
+        result
+        for result in comparison_results
+        if result["一致数"] == maximum_match
+    ][:3]
+
+    return {
+        "maximum_match": maximum_match,
+        "exact_match_count": exact_match_count,
+        "close_match_count": close_match_count,
+        "rarity_score": rarity_score,
+        "closest_results": closest_results,
+    }
+
+
+def rarity_message(score):
+    if score == 0:
+        return (
+            "アンケート内に、同じ5作品を"
+            "選んだ人がいます。"
+        )
+
+    if score <= 20:
+        return (
+            "かなり近い好みの回答者がいます。"
+        )
+
+    if score <= 40:
+        return (
+            "一部に近い好みの回答者がいます。"
+        )
+
+    if score <= 60:
+        return (
+            "やや珍しい組み合わせです。"
+        )
+
+    if score <= 80:
+        return (
+            "かなり珍しい組み合わせです。"
+        )
+
+    return (
+        "アンケート内では非常に珍しい"
+        "組み合わせです。"
+    )
 
 
 # ==================================================
@@ -335,13 +480,13 @@ def create_item2vec_recommendations(
 
 responses = load_survey()
 
-item2vec_sentences = tuple(
+training_sentences = tuple(
     tuple(titles)
     for titles in responses
 )
 
-item2vec_model = train_item2vec(
-    item2vec_sentences
+preference_model = train_preference_model(
+    training_sentences
 )
 
 all_titles = sorted(
@@ -353,27 +498,53 @@ all_titles = sorted(
     key=lambda title: title.lower(),
 )
 
+
 st.info(
     f"回答者数：{len(responses)}人　／　"
     f"登録マンガ数：{len(all_titles)}作品"
 )
 
 
+with st.expander(
+    "2つのおすすめ方法について"
+):
+    st.markdown(
+        """
+**みんなの回答からおすすめ**
+
+選択したマンガを挙げた人が、ほかにどの作品を
+選んでいたかを集計します。  
+技術的には「共起ベース」の推薦です。
+
+**好みの近さからおすすめ**
+
+5作品の組み合わせを学習し、似た選ばれ方をしている
+作品を探します。  
+技術的には「item2vec」を使用しています。
+        """
+    )
+
+
 # ==================================================
-# 画面
+# 通常のレコメンド
 # ==================================================
+
+st.subheader("おすすめマンガを探す")
 
 selected_title = st.selectbox(
     "好きなマンガを選んでください",
     all_titles,
 )
 
-result_count = st.slider(
+result_count = st.number_input(
     "表示するおすすめ件数",
     min_value=1,
     max_value=20,
     value=10,
+    step=1,
 )
+
+result_count = int(result_count)
 
 selected_user_count = sum(
     selected_title in titles
@@ -394,36 +565,37 @@ if selected_user_count == 1:
 
 tab1, tab2 = st.tabs(
     [
-        "共起ベース",
-        "item2vec",
+        "👥 みんなの回答から",
+        "🧭 好みの近さから",
     ]
 )
 
 
-# 共起ベース
 with tab1:
     st.subheader(
         f"「{selected_title}」を選んだ人のおすすめ"
     )
 
     st.write(
-        "同じ回答者が一緒に選んだ作品をもとに推薦します。"
+        "同じ回答者が一緒に選んだ作品を"
+        "おすすめします。"
     )
 
-    cooccurrence_results = (
-        create_cooccurrence_recommendations(
+    group_results = (
+        create_group_recommendations(
             responses,
             selected_title,
         )
     )
 
-    if cooccurrence_results.empty:
+    if group_results.empty:
         st.warning(
-            "このマンガと一緒に選ばれた作品がありません。"
+            "このマンガと一緒に選ばれた"
+            "作品がありません。"
         )
 
     else:
-        display_df = cooccurrence_results.head(
+        display_df = group_results.head(
             result_count
         ).copy()
 
@@ -438,11 +610,13 @@ with tab1:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "順位": st.column_config.NumberColumn(
-                    "順位",
-                    format="%d",
-                ),
-                "マンガ": "おすすめマンガ",
+                "順位":
+                    st.column_config.NumberColumn(
+                        "順位",
+                        format="%d",
+                    ),
+                "マンガ":
+                    "おすすめマンガ",
                 "一緒に選んだ人数":
                     st.column_config.NumberColumn(
                         "一緒に選んだ人数",
@@ -459,58 +633,70 @@ with tab1:
         )
 
 
-# item2vec
 with tab2:
     st.subheader(
-        f"item2vecによる「{selected_title}」のおすすめ"
+        f"「{selected_title}」と"
+        "好みが近いおすすめ"
     )
 
     st.write(
-        "5作品の組み合わせを学習し、"
-        "ベクトルが近い作品を推薦します。"
+        "アンケート内の選ばれ方を学習し、"
+        "好みが近い作品をおすすめします。"
     )
 
-    item2vec_results = (
-        create_item2vec_recommendations(
-            item2vec_model,
+    st.caption(
+        "回答数が少ないため、結果は参考値です。"
+    )
+
+    preference_results = (
+        create_preference_recommendations(
+            preference_model,
             responses,
             selected_title,
             result_count,
         )
     )
 
-    if item2vec_results.empty:
+    if preference_results.empty:
         st.warning(
-            "item2vecの推薦結果を作成できませんでした。"
+            "おすすめ結果を作成できませんでした。"
         )
 
     else:
-        item2vec_results.insert(
+        preference_results.insert(
             0,
             "順位",
-            range(1, len(item2vec_results) + 1),
+            range(
+                1,
+                len(preference_results) + 1,
+            ),
         )
 
         st.dataframe(
-            item2vec_results,
+            preference_results,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "順位": st.column_config.NumberColumn(
-                    "順位",
-                    format="%d",
-                ),
-                "マンガ": "おすすめマンガ",
-                "item2vec類似度":
+                "順位":
                     st.column_config.NumberColumn(
-                        "item2vec類似度",
+                        "順位",
+                        format="%d",
+                    ),
+                "マンガ":
+                    "おすすめマンガ",
+                "好みの近さ":
+                    st.column_config.ProgressColumn(
+                        "好みの近さ",
+                        min_value=0.0,
+                        max_value=1.0,
                         format="%.3f",
                         help=(
-                            "1に近いほど、item2vec上で"
-                            "似た作品として学習されています。"
+                            "1に近いほど、"
+                            "アンケート内で似た選ばれ方を"
+                            "している作品です。"
                         ),
                     ),
-                "一緒に選んだ人数":
+                "実際に一緒に選んだ人数":
                     st.column_config.NumberColumn(
                         "実際に一緒に選んだ人数",
                         format="%d人",
@@ -520,11 +706,114 @@ with tab2:
 
 
 # ==================================================
+# 異端度ミニコーナー
+# ==================================================
+
+st.divider()
+
+st.subheader(
+    "🪐 あなたのマンガ好みはどのくらい珍しい？"
+)
+
+st.write(
+    "好きなマンガを5作品選ぶと、"
+    "このアンケート内で似た選び方をした人が"
+    "どのくらいいるかを確認できます。"
+)
+
+favorite_five = st.multiselect(
+    "好きなマンガを5作品選んでください",
+    all_titles,
+    max_selections=5,
+    placeholder="作品名を検索して選択",
+)
+
+if len(favorite_five) < 5:
+    st.info(
+        f"あと{5 - len(favorite_five)}作品"
+        "選んでください。"
+    )
+
+else:
+    rarity_result = analyze_rarity(
+        responses,
+        favorite_five,
+    )
+
+    if rarity_result is not None:
+        metric1, metric2, metric3, metric4 = (
+            st.columns(4)
+        )
+
+        with metric1:
+            st.metric(
+                "異端度",
+                f"{rarity_result['rarity_score']} / 100",
+            )
+
+        with metric2:
+            st.metric(
+                "最も近い人との一致",
+                f"{rarity_result['maximum_match']} / 5作品",
+            )
+
+        with metric3:
+            st.metric(
+                "3作品以上一致した人",
+                f"{rarity_result['close_match_count']}人",
+            )
+
+        with metric4:
+            st.metric(
+                "5作品すべて一致した人",
+                f"{rarity_result['exact_match_count']}人",
+            )
+
+        st.progress(
+            rarity_result["rarity_score"]
+        )
+
+        st.write(
+            rarity_message(
+                rarity_result["rarity_score"]
+            )
+        )
+
+        st.caption(
+            "異端度は、最も近い回答者との"
+            "一致作品数から算出した、"
+            "この51人のアンケート内だけの参考値です。"
+        )
+
+        with st.expander(
+            "あなたに最も近い回答例を見る"
+        ):
+            closest_df = pd.DataFrame(
+                rarity_result["closest_results"]
+            )
+
+            st.dataframe(
+                closest_df[
+                    [
+                        "一致数",
+                        "一致した作品",
+                        "回答作品",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+# ==================================================
 # 人気作品
 # ==================================================
 
 st.divider()
-st.subheader("アンケート内で人気のマンガ")
+
+st.subheader(
+    "アンケート内で人気のマンガ"
+)
 
 popularity = Counter(
     title
@@ -551,14 +840,17 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "順位": st.column_config.NumberColumn(
-            "順位",
-            format="%d",
-        ),
-        "マンガ": "マンガ",
-        "回答人数": st.column_config.NumberColumn(
-            "回答人数",
-            format="%d人",
-        ),
+        "順位":
+            st.column_config.NumberColumn(
+                "順位",
+                format="%d",
+            ),
+        "マンガ":
+            "マンガ",
+        "回答人数":
+            st.column_config.NumberColumn(
+                "回答人数",
+                format="%d人",
+            ),
     },
 )
