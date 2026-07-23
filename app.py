@@ -1,3 +1,4 @@
+import math
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -377,25 +378,29 @@ def analyze_rarity(
     selected_titles,
 ):
     selected_set = set(selected_titles)
+    selected_count = len(selected_set)
+
+    if selected_count < 2:
+        return None
 
     comparison_results = []
 
     for index, titles in enumerate(responses):
         response_set = set(titles)
-
-        matched_titles = (
-            selected_set & response_set
-        )
+        matched_titles = selected_set & response_set
+        match_count = len(matched_titles)
 
         comparison_results.append(
             {
                 "回答番号": index + 1,
-                "一致数": len(matched_titles),
+                "一致数": match_count,
+                "一致率": match_count / selected_count,
                 "一致した作品": " / ".join(
                     sorted(matched_titles)
                 ),
                 "回答作品": " / ".join(titles),
-                "完全一致": response_set == selected_set,
+                "選んだ作品がすべて一致":
+                    selected_set.issubset(response_set),
             }
         )
 
@@ -407,18 +412,31 @@ def analyze_rarity(
         for result in comparison_results
     )
 
-    exact_match_count = sum(
-        result["完全一致"]
+    complete_match_count = sum(
+        result["選んだ作品がすべて一致"]
         for result in comparison_results
+    )
+
+    # 「好みが近い」と判断する一致数
+    # 2作品選択：2作品一致
+    # 3作品選択：2作品以上一致
+    # 4作品選択：3作品以上一致
+    # 5作品選択：3作品以上一致
+    close_match_threshold = max(
+        2,
+        math.ceil(selected_count * 0.6),
     )
 
     close_match_count = sum(
-        result["一致数"] >= 3
+        result["一致数"] >= close_match_threshold
         for result in comparison_results
     )
 
-    rarity_score = int(
-        100 - maximum_match * 20
+    # 最も近い回答者との一致率を0～100の異端度に変換
+    rarity_score = round(
+        100 * (
+            1 - maximum_match / selected_count
+        )
     )
 
     rarity_score = max(
@@ -433,9 +451,11 @@ def analyze_rarity(
     ][:3]
 
     return {
+        "selected_count": selected_count,
         "maximum_match": maximum_match,
-        "exact_match_count": exact_match_count,
+        "complete_match_count": complete_match_count,
         "close_match_count": close_match_count,
+        "close_match_threshold": close_match_threshold,
         "rarity_score": rarity_score,
         "closest_results": closest_results,
     }
@@ -444,8 +464,8 @@ def analyze_rarity(
 def rarity_message(score):
     if score == 0:
         return (
-            "アンケート内に、同じ5作品を"
-            "選んだ人がいます。"
+            "選んだ作品をすべて挙げている"
+            "回答者がいます。"
         )
 
     if score <= 20:
@@ -518,8 +538,8 @@ with st.expander(
 
 **好みの近さからおすすめ**
 
-5作品の組み合わせを学習し、似た選ばれ方をしている
-作品を探します。  
+アンケートに記入された作品の組み合わせを学習し、
+似た選ばれ方をしている作品を探します。  
 技術的には「item2vec」を使用しています。
         """
     )
@@ -577,7 +597,7 @@ with tab1:
     )
 
     st.write(
-        "同じ漫画を好きな人が一緒に選んだ作品を"
+        "同じマンガを好きな人が一緒に選んだ作品を"
         "おすすめします。"
     )
 
@@ -716,28 +736,32 @@ st.subheader(
 )
 
 st.write(
-    "好きなマンガを5作品選ぶと、"
+    "好きなマンガを2〜5作品選ぶと、"
     "このアンケート内で似た選び方をした人が"
     "どのくらいいるかを確認できます。"
 )
 
-favorite_five = st.multiselect(
-    "好きなマンガを5作品選んでください",
+selected_favorites = st.multiselect(
+    "好きなマンガを2〜5作品選んでください",
     all_titles,
     max_selections=5,
     placeholder="作品名を検索して選択",
 )
 
-if len(favorite_five) < 5:
+selected_favorite_count = len(
+    selected_favorites
+)
+
+if selected_favorite_count < 2:
     st.info(
-        f"あと{5 - len(favorite_five)}作品"
-        "選んでください。"
+        f"あと{2 - selected_favorite_count}作品"
+        "選ぶと結果が表示されます。"
     )
 
 else:
     rarity_result = analyze_rarity(
         responses,
-        favorite_five,
+        selected_favorites,
     )
 
     if rarity_result is not None:
@@ -754,19 +778,25 @@ else:
         with metric2:
             st.metric(
                 "最も近い人との一致",
-                f"{rarity_result['maximum_match']} / 5作品",
+                (
+                    f"{rarity_result['maximum_match']} / "
+                    f"{rarity_result['selected_count']}作品"
+                ),
             )
 
         with metric3:
             st.metric(
-                "3作品以上一致した人",
+                (
+                    f"{rarity_result['close_match_threshold']}"
+                    "作品以上一致した人"
+                ),
                 f"{rarity_result['close_match_count']}人",
             )
 
         with metric4:
             st.metric(
-                "5作品すべて一致した人",
-                f"{rarity_result['exact_match_count']}人",
+                "選んだ作品がすべて一致した人",
+                f"{rarity_result['complete_match_count']}人",
             )
 
         st.progress(
@@ -780,9 +810,10 @@ else:
         )
 
         st.caption(
-            "異端度は、最も近い回答者との"
-            "一致作品数から算出した、"
-            "この51人のアンケート内だけの参考値です。"
+            "異端度は、選んだ作品数に対する"
+            "最も近い回答者との一致率から算出した、"
+            f"この{len(responses)}人のアンケート内だけの"
+            "参考値です。"
         )
 
         with st.expander(
@@ -796,12 +827,27 @@ else:
                 closest_df[
                     [
                         "一致数",
+                        "一致率",
                         "一致した作品",
                         "回答作品",
                     ]
                 ],
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "一致数":
+                        st.column_config.NumberColumn(
+                            "一致数",
+                            format="%d作品",
+                        ),
+                    "一致率":
+                        st.column_config.ProgressColumn(
+                            "一致率",
+                            min_value=0.0,
+                            max_value=1.0,
+                            format="%.2f",
+                        ),
+                },
             )
 
 
