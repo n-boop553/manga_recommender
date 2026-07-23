@@ -573,7 +573,7 @@ tab1, tab2 = st.tabs(
 
 with tab1:
     st.subheader(
-        f"「{selected_title}」を選んだ人のおすすめ"
+        f"「{selected_title}」を選んだ人のおすすめ作品"
     )
 
     st.write(
@@ -636,7 +636,7 @@ with tab1:
 with tab2:
     st.subheader(
         f"「{selected_title}」と"
-        "系統が近い作品をおすすめします。"
+        "系統が近いおすすめ作品"
     )
 
     st.write(
